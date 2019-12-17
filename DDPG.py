@@ -2,8 +2,6 @@
  DDPG for Carla 0.9.6
 """
 
-import sklearn
-import idlelib
 import tensorflow as tf
 import numpy as np
 import time
@@ -79,7 +77,6 @@ class DDPG(object):
 
     def choose_action(self, s):
         a = self.sess.run(self.a, {self.S: s[np.newaxis, :]})[0]
-
         return a
 
     def learn(self):
@@ -178,9 +175,9 @@ class DDPG(object):
 def main(train=True):
     s_dim = 12
     a_dim = 3
-    s = np.ones(12)
-    if train:
 
+    if train:
+        s = np.ones(12) # s = world.reset()
         ddpg = DDPG(a_dim, s_dim, train=train)
         saver = tf.train.Saver()
         var = 3  # control exploration
@@ -192,7 +189,7 @@ def main(train=True):
                 # Add exploration noise
                 a = ddpg.choose_action(s)
                 # add randomness to action selection for exploration
-                # s_, r, done, info = env.step(a)
+                # s_, r, done, info = world.step(a)
 
                 ddpg.store_transition(s, a, r / 10, s_)
 
@@ -218,8 +215,9 @@ def main(train=True):
 
     else:
 
+        s = np.ones(12)  # s = world.reset()
         ddpg = DDPG(a_dim, s_dim, train=train)
-
+        saver = tf.train.Saver()
         var = 3  # control exploration
         t1 = time.time()
         for i in range(MAX_EPISODES):
@@ -229,7 +227,7 @@ def main(train=True):
                 # Add exploration noise
                 steer, throttle, brake, a = ddpg.choose_action(s)
                 # add randomness to action selection for exploration
-                # s_, r, done, info = env.step(a)
+                # s_, r, done, info = world.step(a)
 
                 s = s_
                 ep_reward += r
