@@ -2,7 +2,7 @@
  DDPG for Carla 0.9.6
 """
 
-
+import sklearn
 import tensorflow as tf
 import numpy as np
 import time
