@@ -1,6 +1,7 @@
 """
- DDPG for Carla
+ DDPG for Carla 0.9.6
 """
+
 
 import tensorflow as tf
 import numpy as np
@@ -62,6 +63,7 @@ class DDPG(object):
             LR_A).minimize(a_loss, var_list=a_params)
 
         # soft replacement happened at here
+        # minimize td_error to train c_net
         with tf.control_dependencies(target_update):
             q_target = self.R + GAMMA * q_
             td_error = tf.losses.mean_squared_error(
