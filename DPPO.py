@@ -1,39 +1,43 @@
 """
-PPO for Carla
-
+PPO for Carla 0.9.6
 """
+
 import threading
 import queue
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+import shutil
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-MAX_EPISODES = 1000
+#  hyper parameters
+LOG_DIR = './log'  # tensorboard
+MAX_EPISODES = 100000
 EP_LEN = 200
 N_WORKER = 1  # parallel workers
 GAMMA = 0.9  # reward discount factor
-A_LR = 0.0001  # learning rate for actor
-C_LR = 0.0002  # learning rate for critic
-MIN_BATCH_SIZE = 64  # minimum batch size for updating PPO
+LR_A = 0.0001  # learning rate for actor
+LR_C = 0.0002  # learning rate for critic
+BATCH_SIZE = 64  # minimum batch size for updating PPO
 UPDATE_STEP = 10  # loop update operation n-steps
-EPSILON = 0.2  # for clipping surrogate objective
+EPSILON = 0.2  # for clipping surrogate objective in PPO2
 
+
+#  RL Method
 
 class PPO(object):
-    def __init__(self, s_dim, a_dim, train=True):
+    def __init__(self, s_dim, a_dim, train=True, tensorboard_graph=True):
         self.sess = tf.Session()
-        self.tfs = tf.placeholder(tf.float32, [None, s_dim], 'state')
-
+        self.S = tf.placeholder(tf.float32, [None, s_dim], 'state')
         # critic
-        l1 = tf.layers.dense(self.tfs, 100, tf.nn.relu)
-        self.v = tf.layers.dense(l1, 1)
+        l1 = tf.layers.dense(self.S, 100, tf.nn.relu, name='c_l1')
+        l2 = tf.layers.dense(l1, 100, tf.nn.relu, name='c_l2')
+        self.v = tf.layers.dense(l2, 1)
         self.tfdc_r = tf.placeholder(tf.float32, [None, 1], 'discounted_r')
         self.advantage = self.tfdc_r - self.v
-        self.closs = tf.reduce_mean(tf.square(self.advantage))
-        self.ctrain_op = tf.train.AdamOptimizer(C_LR).minimize(self.closs)
-
+        self.c_loss = tf.reduce_mean(tf.square(self.advantage))
+        self.ctrain_op = tf.train.AdamOptimizer(LR_C).minimize(self.c_loss)
         # actor
         pi, pi_params = self._build_anet('pi', trainable=True)
         oldpi, oldpi_params = self._build_anet('oldpi', trainable=False)
@@ -53,11 +57,15 @@ class PPO(object):
             surr,
             tf.clip_by_value(ratio, 1. - EPSILON, 1. + EPSILON) * self.tfadv))
 
-        self.atrain_op = tf.train.AdamOptimizer(A_LR).minimize(self.aloss)
+        self.atrain_op = tf.train.AdamOptimizer(LR_A).minimize(self.aloss)
         self.sess.run(tf.global_variables_initializer())
         self.saver = tf.train.Saver()
         if train is False:
             self.restore_net()
+        if tensorboard_graph:
+            if os.path.exists(LOG_DIR):
+                shutil.rmtree(LOG_DIR)
+            tf.summary.FileWriter(LOG_DIR, self.sess.graph)
 
     def update(self):
         while not COORD.should_stop():
@@ -71,13 +79,13 @@ class PPO(object):
                                                 s_dim: s_dim + a_dim], data[:, -1:]
                 adv = self.sess.run(
                     self.advantage, {
-                        self.tfs: s, self.tfdc_r: r})
+                        self.S: s, self.tfdc_r: r})
                 # update actor and critic in a update loop
                 [self.sess.run(self.atrain_op,
-                               {self.tfs: s,
+                               {self.S: s,
                                 self.tfa: a,
                                 self.tfadv: adv}) for _ in range(UPDATE_STEP)]
-                [self.sess.run(self.ctrain_op, {self.tfs: s, self.tfdc_r: r}) for _ in range(
+                [self.sess.run(self.ctrain_op, {self.S: s, self.tfdc_r: r}) for _ in range(
                     UPDATE_STEP)]
                 UPDATE_EVENT.clear()  # updating finished
                 GLOBAL_UPDATE_COUNTER = 0  # reset counter
@@ -86,9 +94,10 @@ class PPO(object):
     def _build_anet(self, name, trainable):
         with tf.variable_scope(name):
             l1 = tf.layers.dense(
-                self.tfs, 200, tf.nn.relu, trainable=trainable)
+                self.S, 200, tf.nn.relu, trainable=trainable)
             mu_steer = tf.layers.dense(l1, 1, tf.nn.tanh, trainable=trainable)
-            mu_throttle = tf.layers.dense(l1, 1, tf.nn.sigmoid, trainable=trainable)
+            mu_throttle = tf.layers.dense(
+                l1, 1, tf.nn.sigmoid, trainable=trainable)
             mu_brake = tf.layers.dense(l1, 1, tf.nn.relu, trainable=trainable)
             mu = tf.concat([mu_steer, mu_throttle, mu_brake], axis=1)
             sigma = tf.layers.dense(
@@ -99,7 +108,7 @@ class PPO(object):
 
     def choose_action(self, s):
         s = s[np.newaxis, :]
-        a = self.sess.run(self.sample_op, {self.tfs: s})[0]
+        a = self.sess.run(self.sample_op, {self.S: s})[0]
         a_steer = np.clip(a[0], -1, 1)
         a_throttle = np.clip(a[1], 0, 1)
         a_brake = np.clip(a[2], 0, 1)
@@ -108,7 +117,7 @@ class PPO(object):
     def get_v(self, s):
         if s.ndim < 2:
             s = s[np.newaxis, :]
-        return self.sess.run(self.v, {self.tfs: s})[0, 0]
+        return self.sess.run(self.v, {self.S: s})[0, 0]
 
     def save_net(self):
         save_path = self.saver.save(self.sess, 'DDPG' + "/save_net.ckpt")
@@ -119,8 +128,8 @@ class PPO(object):
 
 
 class Worker(object):
-    def __init__(self, wid, coord):
-        self.wid = wid
+    def __init__(self, w_id, coord):
+        self.worker_id = w_id
         self.ppo = GLOBAL_PPO
         self.COORD = coord
 
@@ -147,7 +156,7 @@ class Worker(object):
 
                 # count to minimum batch size, no need to wait other workers
                 GLOBAL_UPDATE_COUNTER += 1
-                if t == EP_LEN - 1 or GLOBAL_UPDATE_COUNTER >= MIN_BATCH_SIZE:
+                if t == EP_LEN - 1 or GLOBAL_UPDATE_COUNTER >= BATCH_SIZE:
                     v_s_ = self.ppo.get_v(s_)
                     discounted_r = []  # compute discounted reward
                     for r in buffer_r[::-1]:
@@ -159,7 +168,7 @@ class Worker(object):
                         buffer_a), np.array(discounted_r)[:, np.newaxis]
                     buffer_s, buffer_a, buffer_r = [], [], []
                     QUEUE.put(np.hstack((bs, ba, br)))  # put data in the queue
-                    if GLOBAL_UPDATE_COUNTER >= MIN_BATCH_SIZE:
+                    if GLOBAL_UPDATE_COUNTER >= BATCH_SIZE:
                         ROLLING_EVENT.clear()  # stop collecting data
                         UPDATE_EVENT.set()  # globalPPO update
 
@@ -180,7 +189,7 @@ class Worker(object):
                     MAX_EPISODES *
                     100),
                 '|W%i' %
-                self.wid,
+                self.worker_id,
                 '|Ep_r: %.2f' %
                 ep_r,
             )
@@ -194,7 +203,7 @@ def main(train=True):
 
         UPDATE_EVENT.clear()  # not update now
         ROLLING_EVENT.set()  # start to roll out
-        workers = [Worker(wid=i, coord=COORD) for i in range(N_WORKER)]
+        workers = [Worker(w_id=i, coord=COORD) for i in range(N_WORKER)]
 
         GLOBAL_UPDATE_COUNTER, GLOBAL_EP = 0, 0
         GLOBAL_RUNNING_R = []
@@ -221,9 +230,10 @@ def main(train=True):
 
 
 if __name__ == '__main__':
-    global GLOBAL_EP , GLOBAL_RUNNING_R, GLOBAL_UPDATE_COUNTER
+    global GLOBAL_EP, GLOBAL_RUNNING_R, GLOBAL_UPDATE_COUNTER
     GLOBAL_UPDATE_COUNTER, GLOBAL_EP = 0, 0
-    UPDATE_EVENT, ROLLING_EVENT = threading.Event(), threading.Event()
+    UPDATE_EVENT = threading.Event()
+    ROLLING_EVENT = threading.Event()
     COORD = tf.train.Coordinator()
     QUEUE = queue.Queue()  # workers putting data in this queue
     s_dim = 12

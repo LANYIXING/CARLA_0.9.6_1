@@ -241,9 +241,6 @@ class World(object):
             if actor is not None:
                 actor.destroy()
 
-    def get_state(self):
-        vehicle_location = self.vehicle2.get_transform()
-        return vehicle_location
 
 
 
