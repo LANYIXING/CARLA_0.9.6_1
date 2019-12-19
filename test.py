@@ -2,6 +2,7 @@
 
 import threading
 from time import sleep
+from DDPG import DDPG
 
 
 def test(n, event):
@@ -35,4 +36,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    DDPG = DDPG(a_dim=3, s_dim=12)

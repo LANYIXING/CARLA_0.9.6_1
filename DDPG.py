@@ -6,11 +6,12 @@ import tensorflow as tf
 import numpy as np
 import time
 import os
+import shutil
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 
 #  hyper parameters
-
+LOG_DIR = './logs'  # tensorboard
 MAX_EPISODES = 100000  # total episodes in training
 LR_A = 0.001  # learning rate for actor net
 LR_C = 0.002  # learning rate for critic net
@@ -24,7 +25,7 @@ RENDER = False  # display
 #  RL Method
 
 class DDPG(object):
-    def __init__(self, a_dim, s_dim, train=True):
+    def __init__(self, a_dim, s_dim, train=True, tensorboard_graph=True):
         self.memory = np.zeros(
             (MEMORY_CAPACITY,
              s_dim * 2 + a_dim + 1),
@@ -51,8 +52,7 @@ class DDPG(object):
             return ema.average(getter(name, *args, **kwargs))
 
         # soft update operation
-        target_update = [ema.apply(a_params), ema.apply(
-            c_params)]
+        target_update = [ema.apply(a_params), ema.apply(c_params)]
         # replaced target parameters, 'reuse' create multiple parallel or nested namespaces
         a_ = self._build_a(self.S_, reuse=True, custom_getter=ema_getter)
         q_ = self._build_c(self.S_, a_, reuse=True, custom_getter=ema_getter)
@@ -74,6 +74,10 @@ class DDPG(object):
         self.saver = tf.train.Saver()
         if train is False:
             self.restore_net()
+        if tensorboard_graph:
+            if os.path.exists(LOG_DIR):
+                shutil.rmtree(LOG_DIR)
+            tf.summary.FileWriter(LOG_DIR, self.sess.graph)
 
     def choose_action(self, s):
         a = self.sess.run(self.a, {self.S: s[np.newaxis, :]})[0]
@@ -177,8 +181,8 @@ def main(train=True):
     a_dim = 3
 
     if train:
-        s = np.ones(12) # s = world.reset()
         ddpg = DDPG(a_dim, s_dim, train=train)
+        s = np.ones(12)  # s = world.reset()
         saver = tf.train.Saver()
         var = 3  # control exploration
         t1 = time.time()
@@ -189,7 +193,7 @@ def main(train=True):
                 # Add exploration noise
                 a = ddpg.choose_action(s)
                 # add randomness to action selection for exploration
-                # s_, r, done, info = world.step(a)
+                # s_, r, done = world.step(a)
 
                 ddpg.store_transition(s, a, r / 10, s_)
 
