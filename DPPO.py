@@ -164,7 +164,7 @@ class Worker(object):
                     # clear history buffer, use new policy to collect data
                     buffer_s, buffer_a, buffer_r = [], [], []
                 a = self.ppo.choose_action(s)
-                #s_, r, done, _ = self.env.step(a)
+                # s_, r, done, _ = self.env.step(a)
                 done = True
                 buffer_s.append(s)
                 buffer_a.append(a)
