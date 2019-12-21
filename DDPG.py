@@ -26,6 +26,7 @@ RENDER = False  # display
 
 class DDPG(object):
     def __init__(self, a_dim, s_dim, train=True, tensorboard_graph=True):
+        tf.reset_default_graph()
         self.memory = np.zeros(
             (MEMORY_CAPACITY,
              s_dim * 2 + a_dim + 1),
@@ -105,42 +106,57 @@ class DDPG(object):
 
     def _build_a(self, s, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
+        w_init = tf.random_normal_initializer(0., .1)
         with tf.variable_scope('Actor', reuse=reuse, custom_getter=custom_getter):
             layer1 = tf.layers.dense(
                 s,
                 100,
                 activation=tf.nn.relu,
                 name='l1',
-                trainable=trainable)
+                trainable=trainable,
+                kernel_initializer=w_init
+            )
             layer2 = tf.layers.dense(
                 layer1,
                 100,
                 activation=tf.nn.relu,
                 name='l2',
-                trainable=trainable)
+                trainable=trainable,
+                kernel_initializer=w_init
+            )
             steer = tf.layers.dense(
                 layer2,
                 1,
                 activation=tf.nn.tanh,
                 name='a_s',
-                trainable=trainable)
+                trainable=trainable,
+                kernel_initializer=w_init
+            )
             throttle = tf.layers.dense(
                 layer2,
                 1,
                 activation=tf.nn.sigmoid,
                 name='a_t',
-                trainable=trainable)
+                trainable=trainable,
+                kernel_initializer=w_init
+            )
             brake = tf.layers.dense(
                 layer2,
                 1,
                 activation=tf.nn.relu,
                 name='a_b',
-                trainable=trainable)
+                trainable=trainable,
+                kernel_initializer=w_init
+            )
+            steer = tf.clip_by_value(steer, -1, 1)
+            throttle = tf.clip_by_value(throttle, 0, 1)
+            brake = tf.clip_by_value(brake, 0, 1)
             a = tf.concat([steer, throttle, brake], axis=1)
             return a
 
     def _build_c(self, s, a, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
+        w_init = tf.random_normal_initializer(0., .1)
         with tf.variable_scope('Critic', reuse=reuse, custom_getter=custom_getter):
             n_l1 = 100
             w1_s = tf.get_variable(
@@ -162,9 +178,13 @@ class DDPG(object):
                 n_l1,
                 activation=tf.nn.relu,
                 name='c_l2',
-                trainable=trainable)
+                trainable=trainable,
+                kernel_initializer=w_init
+            )
 
-            return tf.layers.dense(layer2, 1, trainable=trainable)  # Q(s,a)
+            return tf.layers.dense(layer2, 1, trainable=trainable,
+                kernel_initializer=w_init
+            )  # Q(s,a)
 
     def save_net(self):
         save_path = self.saver.save(self.sess, 'DDPG' + "/save_net.ckpt")
@@ -183,7 +203,6 @@ def main(train=True):
     if train:
         ddpg = DDPG(a_dim, s_dim, train=train)
         s = np.ones(12)  # s = world.reset()
-        saver = tf.train.Saver()
         var = 3  # control exploration
         t1 = time.time()
         for i in range(MAX_EPISODES):

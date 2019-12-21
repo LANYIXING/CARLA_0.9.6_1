@@ -275,7 +275,7 @@ class RLControl(object):
         control.manual_gear_shift = False
         control.collisionFlag = col_hist.get(col_fram)
         if control.collisionFlag:
-            print(6)
+            print('collisionFlag')
         return control, control.collisionFlag
 
     def step(self, world, action):
@@ -715,7 +715,6 @@ class CameraManager(object):
 def game_loop(args):
     pygame.init()  # intial pygame
     pygame.font.init()  # initialize the font module
-    # world = None
     while True:
         try:
             client = carla.Client(args.host, args.port)  # host address and port
@@ -743,8 +742,7 @@ def game_loop(args):
                 pygame.display.flip()
 
                 control, state, r, done = controller.step(world, action=[0, 0.5, 0])
-                print(state)
-                control.manual_gear_shift = False
+                # control.manual_gear_shift = False
                 world.player1.apply_control(control)
                 if control.collisionFlag is not None:
                     # print("newly start")

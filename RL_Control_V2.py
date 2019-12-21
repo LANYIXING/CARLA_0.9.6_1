@@ -17,6 +17,7 @@ import random
 import re
 import sys
 import weakref
+import DDPG
 
 try:
     import pygame
@@ -240,16 +241,11 @@ class RLControl(object):
             self._control.steer = 0
             self._control.throttle = 0
 
-    def run_step(self,world):
+    def run_step(self, world, action):
         # not enough waypoints in the horizon? => add more!
-        # print("player1")
-        # print(world.player1.get_location().x)
-        # print(world.player1.get_location().y)
-        # print(world.player1.get_location().z)
+
         col_hist = world.collision_sensor.get_collision_history()
-        # print("collision_history:")
-        # print(col_hist)
-        # print("frame_number_new:")
+
         col_fram = world.hud.frame
         # print(col_fram)
 
@@ -257,24 +253,51 @@ class RLControl(object):
             print("new_collision_value and newly start:")
             print(col_hist.get(col_fram))
 
-        # print(world.player1.get_velocity())
-        # print("vehicle2")
-        # print(world.vehicle2.get_location().x)
-        # print(world.vehicle2.get_location())
-        # print(world.vehicle2.get_velocity().x)
-        # print(world.vehicle2.get_velocity())
-
-        # RL method (input: front variables; output: variables below)
-
         control = carla.VehicleControl()
-        control.steer = 0
-        control.throttle = 0.5
-        control.brake = 0
+        control.steer = action[0]
+        control.throttle = action[1]
+        control.brake = action[2]
         control.hand_brake = False
         control.manual_gear_shift = False
         control.collisionFlag = col_hist.get(col_fram)
+        if control.collisionFlag:
+            print(6)
+        return control, control.collisionFlag
 
-        return control
+    def step(self, world, action):
+        control, collision_flag = self.run_step(world, action)
+        # print(world.player1.get_velocity())
+        # print("vehicle2")
+        vehicle1_x = world.player1.get_location().x
+        vehicle1_y = world.player1.get_location().y
+        vehicle1_z = world.player1.get_location().z
+        self.vehicle1_location = np.array([vehicle1_x, vehicle1_y, vehicle1_z])
+        vehicle1_vx = world.player1.get_velocity().x
+        vehicle1_vy = world.player1.get_velocity().y
+        vehicle1_vz = world.player1.get_velocity().z
+        self.vehicle1_velocity = np.array([vehicle1_vx, vehicle1_vy, vehicle1_vz])
+        vehicle2_x = world.vehicle2.get_location().x
+        vehicle2_y = world.vehicle2.get_location().y
+        vehicle2_z = world.vehicle2.get_location().z
+        self.vehicle2_location = np.array([vehicle2_x, vehicle2_y, vehicle2_z])
+        vehicle2_vx = world.vehicle2.get_velocity().x
+        vehicle2_vy = world.vehicle2.get_velocity().y
+        vehicle2_vz = world.vehicle2.get_velocity().z
+        self.vehicle2_velocity = np.array([vehicle2_vx, vehicle2_vy, vehicle2_vz])
+
+        state = np.concatenate((self.vehicle1_location, self.vehicle1_velocity,
+                                self.vehicle2_location, self.vehicle2_velocity),
+                               axis=0)
+        dest = np.array([90, 133, 80])
+        r = reward_function(self.vehicle1_location, self.vehicle2_location, dest, collision_flag)
+        done = False
+        if collision_flag:
+            done = True
+        if distance(self.vehicle1_location, dest)<5:
+            done = True
+        return control, state, r, done
+
+
 
 
 # ==============================================================================
@@ -689,8 +712,6 @@ def game_loop(args):
                 (args.width, args.height),
                 pygame.HWSURFACE | pygame.DOUBLEBUF)
 
-
-
             hud = HUD(args.width, args.height)
             # World ():Class that contains the current loaded map. In this class, we can costomize
             # the actor, weather and so on.
@@ -699,19 +720,19 @@ def game_loop(args):
             controller = RLControl(world)
 
             clock = pygame.time.Clock()
+
             while True:
                 # as soon as the server is ready continue!
                 world.world.wait_for_tick(10.0)
-                world.tick(clock)  # Synchronizes with the simulator and returns the id of the newly started frame (only has effect on synchronous mode).
+                world.tick(clock)  # Synchronizes with the simulator and returns the id of the newly started frame (
+                # only has effect on synchronous mode).
                 world.render(display)  # 渲染
                 pygame.display.flip()
 
-                control = controller.run_step(world)
-                print(world.player1.get_velocity().x, '7777')
+                control, state, r, done = controller.step(world, action=[0, 0.5, 0])
+                print(state)
                 control.manual_gear_shift = False
-                print(world.player1.get_velocity().x)
                 world.player1.apply_control(control)
-                print(world.player1.get_velocity().x, '6666')
                 if control.collisionFlag is not None:
                     # print("newly start")
                     break
@@ -769,7 +790,7 @@ def main():
     argparser.add_argument(
         '--res',
         metavar='WIDTHxHEIGHT',
-        default='1280x720',
+        default='400x300',
         help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--filter',

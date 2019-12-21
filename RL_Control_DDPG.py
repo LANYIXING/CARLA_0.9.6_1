@@ -1,7 +1,5 @@
-#!/usr/bin/env python
-
 """
-    RL control from client side.
+ DDPG for Carla 0.9.6
 """
 
 from __future__ import print_function
@@ -17,6 +15,12 @@ import random
 import re
 import sys
 import weakref
+import tensorflow as tf
+import numpy as np
+import time
+import shutil
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import DDPG
 
 try:
@@ -51,7 +55,8 @@ try:
     from pygame.locals import K_MINUS
     from pygame.locals import K_EQUALS
 except ImportError:
-    raise RuntimeError('cannot import pygame, make sure pygame package is installed')
+    raise RuntimeError(
+        'cannot import pygame, make sure pygame package is installed')
 
 try:
     import numpy as np
@@ -60,7 +65,7 @@ except ImportError:
         'cannot import numpy, make sure numpy package is installed')
 
 # ==============================================================================
-# -- find carla module ---------------------------------------------------------
+# -- find carla module ---------------------------------------------------
 # ==============================================================================
 try:
     sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
@@ -71,28 +76,39 @@ except IndexError:
     pass
 
 # ==============================================================================
-# -- add PythonAPI for release mode --------------------------------------------
+# -- add PythonAPI for release mode --------------------------------------
 # ==============================================================================
 try:
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/carla')
+    sys.path.append(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.abspath(__file__))) +
+        '/carla')
 except IndexError:
     pass
 
 import carla
 from carla import ColorConverter as cc
 from carla import Transform, Location, Rotation
+
+
 # from agents.navigation.roaming_agent import RoamingAgent
 # from agents.navigation.basic_agent import BasicAgent
 
 
 # ==============================================================================
-# -- Global functions ----------------------------------------------------------
+# -- Global functions ----------------------------------------------------
 # ==============================================================================
 
 def find_weather_presets():
     rgx = re.compile('.+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)')
-    name = lambda x: ' '.join(m.group(0) for m in rgx.finditer(x))
-    presets = [x for x in dir(carla.WeatherParameters) if re.match('[A-Z].+', x)]
+
+    def name(x): return ' '.join(m.group(0) for m in rgx.finditer(x))
+
+    presets = [
+        x for x in dir(
+            carla.WeatherParameters) if re.match(
+            '[A-Z].+', x)]
     return [(getattr(carla.WeatherParameters, x), name(x)) for x in presets]
 
 
@@ -126,22 +142,28 @@ class World(object):
 
     def restart(self):
         # Keep same camera config if the camera manager exists.
+        time.sleep(1)
         cam_index = self.camera_manager.index if self.camera_manager is not None else 0
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
         # Get a random blueprint.
         # ******I have made this random.choice just have one choice --> vehicle.bmw.grandtourer
-        blueprint = random.choice(self.world.get_blueprint_library().filter(self._actor_filter))
+        blueprint = random.choice(
+            self.world.get_blueprint_library().filter(
+                self._actor_filter))
         # print("blue print")
         # print(self.world.get_blueprint_library().filter(self._actor_filter))
         blueprint.set_attribute('role_name', 'hero')
         if blueprint.has_attribute('color'):
-            color = random.choice(blueprint.get_attribute('color').recommended_values)
+            color = random.choice(
+                blueprint.get_attribute('color').recommended_values)
             # print("color")
             # print(blueprint.get_attribute('color').recommended_values)
             # ****** I have set the blueprint being white as '255,255,255'
             blueprint.set_attribute('color', '255,255,255')
         batch = []
-        blueprint2 = random.choice(self.world.get_blueprint_library().filter(self._actor_filter))
+        blueprint2 = random.choice(
+            self.world.get_blueprint_library().filter(
+                self._actor_filter))
         blueprint2.set_attribute('role_name', 'hero2')
         if blueprint2.has_attribute('color'):
             blueprint2.set_attribute('color', '0,0,0')
@@ -149,17 +171,18 @@ class World(object):
 
         # Spawn the player.
 
-        #     ******************* change positions ****************************************
+        #     ******************* change positions ****************************
         while self.player1 is None:
             # spawn_points = self.map.get_spawn_points()
-            # print("length of sapwn_point is %d" % len(spawn_points) + ",just choose one")  # 257 just choose one
-            x_rand = random.randint(18000,23000)
-            x_rand_v2 = random.randint(x_rand+1000,25000)
-            x_rand = x_rand/100.0
-            x_rand_v2 = x_rand_v2/100.0
-            y_rand = random.randint(12855,13455)
-            y_rand = y_rand /100.0
-            x_speed_randon_v2 = random.randint(100,3000)
+            # print("length of sapwn_point is %d" % len(spawn_points) + ",just
+            # choose one")  # 257 just choose one
+            x_rand = random.randint(18000, 23000)
+            x_rand_v2 = random.randint(x_rand + 1000, 25000)
+            x_rand = x_rand / 100.0
+            x_rand_v2 = x_rand_v2 / 100.0
+            y_rand = random.randint(12855, 13455)
+            y_rand = y_rand / 100.0
+            x_speed_randon_v2 = random.randint(100, 3000)
             if x_speed_randon_v2 - 1000 > 0:
                 x_speed_player = x_speed_randon_v2 - 100
 
@@ -167,18 +190,31 @@ class World(object):
                 x_speed_player = 0
             x_speed_player = x_speed_player / 100
 
-            x_speed_randon_v2 = x_speed_randon_v2/100
-            spawn_point1 = Transform(Location(x=x_rand, y=y_rand, z=1.320625),
-                                     Rotation(pitch=0.000000, yaw=179.999756, roll=0.000000))
-            # ********************************* end *****************************************
+            x_speed_randon_v2 = x_speed_randon_v2 / 100
+            spawn_point1 = Transform(
+                Location(
+                    x=x_rand, y=y_rand, z=1.320625), Rotation(
+                    pitch=0.000000, yaw=179.999756, roll=0.000000))
+            # ********************************* end ***************************
             self.player1 = self.world.try_spawn_actor(blueprint, spawn_point1)
-            spawn_point2 = Transform(Location(x=x_rand_v2, y=y_rand, z=1.320625),
-                                     Rotation(pitch=0.000000, yaw=179.999756, roll=0.000000))
+            spawn_point2 = Transform(
+                Location(
+                    x=x_rand_v2, y=y_rand, z=1.320625), Rotation(
+                    pitch=0.000000, yaw=179.999756, roll=0.000000))
             if self.vehicle2 is None:
                 # print("*****************")
-                self.vehicle2 = self.world.try_spawn_actor(blueprint2, spawn_point2)
-                self.vehicle2.set_velocity(carla.Vector3D(x=-x_speed_randon_v2, y=0.00000, z=0.000000))
-                self.player1.set_velocity(carla.Vector3D(x=-x_speed_player,y = 0.00000,z=0.00000))
+                self.vehicle2 = self.world.try_spawn_actor(
+                    blueprint2, spawn_point2)
+                self.vehicle2.set_velocity(
+                    carla.Vector3D(
+                        x=-x_speed_randon_v2,
+                        y=0.00000,
+                        z=0.000000))
+                self.player1.set_velocity(
+                    carla.Vector3D(
+                        x=-x_speed_player,
+                        y=0.00000,
+                        z=0.00000))
 
         # Set up the sensors.
         self.collision_sensor = CollisionSensor(self.player1, self.hud)
@@ -190,7 +226,6 @@ class World(object):
         actor_type = get_actor_display_name(self.player1)
         self.hud.notification(actor_type)
 
-
     def next_weather(self, reverse=False):
         self._weather_index += 0 if reverse else 0
         self._weather_index %= len(self._weather_presets)
@@ -200,21 +235,17 @@ class World(object):
         self.hud.notification('Weather: %s' % preset[1])
         self.player1.get_world().set_weather(preset[0])
 
-
     def tick(self, clock):
         self.hud.tick(self, clock)
-
 
     def render(self, display):
         self.camera_manager.render(display)
         self.hud.render(display)
 
-
     def destroy_sensors(self):
         self.camera_manager.sensor.destroy()
         self.camera_manager.sensor = None
         self.camera_manager.index = None
-
 
     def destroy(self):
         actors = [
@@ -227,6 +258,22 @@ class World(object):
         for actor in actors:
             if actor is not None:
                 actor.destroy()
+
+    def get_state(self):
+        s = np.array([self.player1.get_location().x,
+                      self.player1.get_location().y,
+                      self.player1.get_location().z,
+                      self.player1.get_velocity().x,
+                      self.player1.get_velocity().y,
+                      self.player1.get_velocity().z,
+                      self.vehicle2.get_location().x,
+                      self.vehicle2.get_location().y,
+                      self.vehicle2.get_location().z,
+                      self.vehicle2.get_velocity().x,
+                      self.vehicle2.get_velocity().y,
+                      self.vehicle2.get_velocity().z,
+                      ])
+        return s
 
 
 # ==============================================================================
@@ -244,9 +291,6 @@ class RLControl(object):
     def run_step(self, world, action):
         # not enough waypoints in the horizon? => add more!
         # print("player1")
-        # print(world.player1.get_location().x)
-        # print(world.player1.get_location().y)
-        # print(world.player1.get_location().z)
         col_hist = world.collision_sensor.get_collision_history()
         # print("collision_history:")
         # print(col_hist)
@@ -258,24 +302,17 @@ class RLControl(object):
             print("new_collision_value and newly start:")
             print(col_hist.get(col_fram))
 
-        # print(world.player1.get_velocity())
-        # print("vehicle2")
-        # print(world.vehicle2.get_location().x)
-        # print(world.vehicle2.get_location())
-        # print(world.vehicle2.get_velocity().x)
-        # print(world.vehicle2.get_velocity())
-
-        # RL method (input: front variables; output: variables below)
-
         control = carla.VehicleControl()
+        action = action.tolist()
         control.steer = action[0]
         control.throttle = action[1]
-        control.brake = action[2]
+        control.brake = 0
+        # control.brake = action[2]
         control.hand_brake = False
         control.manual_gear_shift = False
         control.collisionFlag = col_hist.get(col_fram)
         if control.collisionFlag:
-            print(6)
+            print('collisionFlag')
         return control, control.collisionFlag
 
     def step(self, world, action):
@@ -289,7 +326,8 @@ class RLControl(object):
         vehicle1_vx = world.player1.get_velocity().x
         vehicle1_vy = world.player1.get_velocity().y
         vehicle1_vz = world.player1.get_velocity().z
-        self.vehicle1_velocity = np.array([vehicle1_vx, vehicle1_vy, vehicle1_vz])
+        self.vehicle1_velocity = np.array(
+            [vehicle1_vx, vehicle1_vy, vehicle1_vz])
         vehicle2_x = world.vehicle2.get_location().x
         vehicle2_y = world.vehicle2.get_location().y
         vehicle2_z = world.vehicle2.get_location().z
@@ -297,25 +335,31 @@ class RLControl(object):
         vehicle2_vx = world.vehicle2.get_velocity().x
         vehicle2_vy = world.vehicle2.get_velocity().y
         vehicle2_vz = world.vehicle2.get_velocity().z
-        self.vehicle2_velocity = np.array([vehicle2_vx, vehicle2_vy, vehicle2_vz])
+        self.vehicle2_velocity = np.array(
+            [vehicle2_vx, vehicle2_vy, vehicle2_vz])
 
-        state = np.concatenate((self.vehicle1_location, self.vehicle1_velocity,
-                                self.vehicle2_location, self.vehicle2_velocity),
-                               axis=0)
+        state = np.concatenate(
+            (self.vehicle1_location,
+             self.vehicle1_velocity,
+             self.vehicle2_location,
+             self.vehicle2_velocity),
+            axis=0)
         dest = np.array([90, 133, 80])
-        r = reward_function(self.vehicle1_location, self.vehicle2_location, dest, collision_flag)
+        r = reward_function(
+            self.vehicle1_location,
+            self.vehicle2_location,
+            dest,
+            collision_flag)
         done = False
         if collision_flag:
             done = True
-        if distance(self.vehicle1_location, dest)<5:
+        if distance(self.vehicle1_location, dest) < 5:
             done = True
         return control, state, r, done
 
 
-
-
 # ==============================================================================
-# -- HUD -----------------------------------------------------------------------
+# -- HUD -----------------------------------------------------------------
 # ==============================================================================
 
 # Info on the creen of pygame. The HUD means head up display in automobiles,
@@ -360,18 +404,41 @@ class HUD(object):
         collision = [x / max_col for x in collision]
         vehicles = world.world.get_actors().filter('vehicle.bmw.*')
         self._info_text = [
-            'Server:  % 16.0f FPS' % self.server_fps,
-            'Client:  % 16.0f FPS' % clock.get_fps(),
+            'Server:  % 16.0f FPS' %
+            self.server_fps,
+            'Client:  % 16.0f FPS' %
+            clock.get_fps(),
             '',
-            'Vehicle: % 20s' % get_actor_display_name(world.player1, truncate=20),
-            'Map:     % 20s' % world.map.name,
-            'Simulation time: % 12s' % datetime.timedelta(seconds=int(self.simulation_time)),
+            'Vehicle: % 20s' %
+            get_actor_display_name(
+                world.player1,
+                truncate=20),
+            'Map:     % 20s' %
+            world.map.name,
+            'Simulation time: % 12s' %
+            datetime.timedelta(
+                seconds=int(
+                    self.simulation_time)),
             '',
-            'Speed:   % 15.0f km/h' % (3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)),
-            u'Heading:% 16.0f\N{DEGREE SIGN} % 2s' % (t.rotation.yaw, heading),
-            'Location:% 20s' % ('(% 5.1f, % 5.1f)' % (t.location.x, t.location.y)),
-            'GNSS:% 24s' % ('(% 2.6f, % 3.6f)' % (world.gnss_sensor.lat, world.gnss_sensor.lon)),
-            'Height:  % 18.0f m' % t.location.z,
+            'Speed:   % 15.0f km/h' %
+            (3.6 *
+             math.sqrt(
+                 v.x ** 2 +
+                 v.y ** 2 +
+                 v.z ** 2)),
+            u'Heading:% 16.0f\N{DEGREE SIGN} % 2s' %
+            (t.rotation.yaw,
+             heading),
+            'Location:% 20s' %
+            ('(% 5.1f, % 5.1f)' %
+             (t.location.x,
+              t.location.y)),
+            'GNSS:% 24s' %
+            ('(% 2.6f, % 3.6f)' %
+             (world.gnss_sensor.lat,
+              world.gnss_sensor.lon)),
+            'Height:  % 18.0f m' %
+            t.location.z,
             '']
         if isinstance(c, carla.VehicleControl):
             self._info_text += [
@@ -396,10 +463,11 @@ class HUD(object):
             self._info_text += ['Nearby vehicles:']
 
             def distance(l):
-                return math.sqrt(
-                    (l.x - t.location.x) ** 2 + (l.y - t.location.y) ** 2 + (l.z - t.location.z) ** 2)
+                return math.sqrt((l.x - t.location.x) ** 2 +
+                                 (l.y - t.location.y) ** 2 + (l.z - t.location.z) ** 2)
 
-            vehicles = [(distance(x.get_location()), x) for x in vehicles if x.id != world.player1.id]
+            vehicles = [(distance(x.get_location()), x)
+                        for x in vehicles if x.id != world.player1.id]
             for d, vehicle in sorted(vehicles):
                 if d > 200.0:
                     break
@@ -428,26 +496,35 @@ class HUD(object):
                     break
                 if isinstance(item, list):
                     if len(item) > 1:
-                        points = [(x + 8, v_offset + 8 + (1.0 - y) * 30) for x, y in enumerate(item)]
-                        pygame.draw.lines(display, (255, 136, 0), False, points, 2)
+                        points = [(x + 8, v_offset + 8 + (1.0 - y) * 30)
+                                  for x, y in enumerate(item)]
+                        pygame.draw.lines(
+                            display, (255, 136, 0), False, points, 2)
                     item = None
                     v_offset += 18
                 elif isinstance(item, tuple):
                     if isinstance(item[1], bool):
-                        rect = pygame.Rect((bar_h_offset, v_offset + 8), (6, 6))
-                        pygame.draw.rect(display, (255, 255, 255), rect, 0 if item[1] else 1)
+                        rect = pygame.Rect(
+                            (bar_h_offset, v_offset + 8), (6, 6))
+                        pygame.draw.rect(
+                            display, (255, 255, 255), rect, 0 if item[1] else 1)
                     else:
-                        rect_border = pygame.Rect((bar_h_offset, v_offset + 8), (bar_width, 6))
-                        pygame.draw.rect(display, (255, 255, 255), rect_border, 1)
+                        rect_border = pygame.Rect(
+                            (bar_h_offset, v_offset + 8), (bar_width, 6))
+                        pygame.draw.rect(
+                            display, (255, 255, 255), rect_border, 1)
                         f = (item[1] - item[2]) / (item[3] - item[2])
                         if item[2] < 0.0:
-                            rect = pygame.Rect((bar_h_offset + f * (bar_width - 6), v_offset + 8), (6, 6))
+                            rect = pygame.Rect(
+                                (bar_h_offset + f * (bar_width - 6), v_offset + 8), (6, 6))
                         else:
-                            rect = pygame.Rect((bar_h_offset, v_offset + 8), (f * bar_width, 6))
+                            rect = pygame.Rect(
+                                (bar_h_offset, v_offset + 8), (f * bar_width, 6))
                         pygame.draw.rect(display, (255, 255, 255), rect)
                     item = item[0]
                 if item:  # At this point has to be a str.
-                    surface = self._font_mono.render(item, True, (255, 255, 255))
+                    surface = self._font_mono.render(
+                        item, True, (255, 255, 255))
                     display.blit(surface, (8, v_offset))
                 v_offset += 18
         self._notifications.render(display)
@@ -455,7 +532,7 @@ class HUD(object):
 
 
 # ==============================================================================
-# -- FadingText ----------------------------------------------------------------
+# -- FadingText ----------------------------------------------------------
 # ==============================================================================
 
 
@@ -484,7 +561,7 @@ class FadingText(object):
 
 
 # ==============================================================================
-# -- HelpText ------------------------------------------------------------------
+# -- HelpText ------------------------------------------------------------
 # ==============================================================================
 
 
@@ -493,7 +570,15 @@ class HelpText(object):
         lines = __doc__.split('\n')
         self.font = font
         self.dim = (680, len(lines) * 22 + 12)
-        self.pos = (0.5 * width - 0.5 * self.dim[0], 0.5 * height - 0.5 * self.dim[1])
+        self.pos = (
+            0.5 *
+            width -
+            0.5 *
+            self.dim[0],
+            0.5 *
+            height -
+            0.5 *
+            self.dim[1])
         self.seconds_left = 0
         self.surface = pygame.Surface(self.dim)
         self.surface.fill((0, 0, 0, 0))
@@ -512,7 +597,7 @@ class HelpText(object):
 
 
 # ==============================================================================
-# -- CollisionSensor -----------------------------------------------------------
+# -- CollisionSensor -----------------------------------------------------
 # ==============================================================================
 
 
@@ -524,11 +609,14 @@ class CollisionSensor(object):
         self.hud = hud
         world = self._parent.get_world()
         bp = world.get_blueprint_library().find('sensor.other.collision')
-        self.sensor = world.spawn_actor(bp, carla.Transform(), attach_to=self._parent)
+        self.sensor = world.spawn_actor(
+            bp, carla.Transform(), attach_to=self._parent)
         # We need to pass the lambda a weak reference to self to avoid circular
         # reference.
         weak_self = weakref.ref(self)
-        self.sensor.listen(lambda event: CollisionSensor._on_collision(weak_self, event))
+        self.sensor.listen(
+            lambda event: CollisionSensor._on_collision(
+                weak_self, event))
 
     def get_collision_history(self):
         history = collections.defaultdict(int)
@@ -551,7 +639,7 @@ class CollisionSensor(object):
 
 
 # ==============================================================================
-# -- LaneInvasionSensor --------------------------------------------------------
+# -- LaneInvasionSensor --------------------------------------------------
 # ==============================================================================
 
 
@@ -562,11 +650,14 @@ class LaneInvasionSensor(object):
         self.hud = hud
         world = self._parent.get_world()
         bp = world.get_blueprint_library().find('sensor.other.lane_invasion')
-        self.sensor = world.spawn_actor(bp, carla.Transform(), attach_to=self._parent)
+        self.sensor = world.spawn_actor(
+            bp, carla.Transform(), attach_to=self._parent)
         # We need to pass the lambda a weak reference to self to avoid circular
         # reference.
         weak_self = weakref.ref(self)
-        self.sensor.listen(lambda event: LaneInvasionSensor._on_invasion(weak_self, event))
+        self.sensor.listen(
+            lambda event: LaneInvasionSensor._on_invasion(
+                weak_self, event))
 
     @staticmethod
     def _on_invasion(weak_self, event):
@@ -591,12 +682,16 @@ class GnssSensor(object):
         self.lon = 0.0
         world = self._parent.get_world()
         bp = world.get_blueprint_library().find('sensor.other.gnss')
-        self.sensor = world.spawn_actor(bp, carla.Transform(carla.Location(x=1.0, z=2.8)),
-                                        attach_to=self._parent)
+        self.sensor = world.spawn_actor(
+            bp, carla.Transform(
+                carla.Location(
+                    x=1.0, z=2.8)), attach_to=self._parent)
         # We need to pass the lambda a weak reference to self to avoid circular
         # reference.
         weak_self = weakref.ref(self)
-        self.sensor.listen(lambda event: GnssSensor._on_gnss_event(weak_self, event))
+        self.sensor.listen(
+            lambda event: GnssSensor._on_gnss_event(
+                weak_self, event))
 
     @staticmethod
     def _on_gnss_event(weak_self, event):
@@ -608,8 +703,8 @@ class GnssSensor(object):
 
 
 # ==============================================================================
-# -- CameraManager -------------------------------------------------------------
-# ==============================================================================
+# -- CameraManager -------------------------------------------------------
+# ============set_velocity==================================================================
 
 
 class CameraManager(object):
@@ -620,8 +715,16 @@ class CameraManager(object):
         self.hud = hud
         self.recording = False
         self._camera_transforms = [
-            carla.Transform(carla.Location(x=-5.5, z=2.8), carla.Rotation(pitch=-15)),
-            carla.Transform(carla.Location(x=1.6, z=1.7))]
+            carla.Transform(
+                carla.Location(
+                    x=-5.5,
+                    z=2.8),
+                carla.Rotation(
+                    pitch=-15)),
+            carla.Transform(
+                carla.Location(
+                    x=1.6,
+                    z=1.7))]
         self.transform_index = 1
         self.sensors = [
             ['sensor.camera.rgb', cc.Raw, 'Camera RGB'],
@@ -645,8 +748,10 @@ class CameraManager(object):
         self.index = None
 
     def toggle_camera(self):
-        self.transform_index = (self.transform_index + 1) % len(self._camera_transforms)
-        self.sensor.set_transform(self._camera_transforms[self.transform_index])
+        self.transform_index = (self.transform_index +
+                                1) % len(self._camera_transforms)
+        self.sensor.set_transform(
+            self._camera_transforms[self.transform_index])
 
     def set_sensor(self, index, notify=True):
         index = index % len(self.sensors)
@@ -663,7 +768,9 @@ class CameraManager(object):
             # We need to pass the lambda a weak reference to self to avoid
             # circular reference.
             weak_self = weakref.ref(self)
-            self.sensor.listen(lambda image: CameraManager._parse_image(weak_self, image))
+            self.sensor.listen(
+                lambda image: CameraManager._parse_image(
+                    weak_self, image))
         if notify:
             self.hud.notification(self.sensors[index][2])
         self.index = index
@@ -673,7 +780,9 @@ class CameraManager(object):
 
     def toggle_recording(self):
         self.recording = not self.recording
-        self.hud.notification('Recording %s' % ('On' if self.recording else 'Off'))
+        self.hud.notification(
+            'Recording %s' %
+            ('On' if self.recording else 'Off'))
 
     def render(self, display):
         if self.surface is not None:
@@ -715,50 +824,77 @@ class CameraManager(object):
 def game_loop(args):
     pygame.init()  # intial pygame
     pygame.font.init()  # initialize the font module
-    # world = None
-    while True:
+    # DDPG_PARAMETERS
+    train = True
+    s_dim = 12
+    a_dim = 3
+    var = 1  # control exploration
+    memory_capcity = 10000  # memory size
+    max_episodes = 200
+    render = True  # display
+    ddpg = DDPG.DDPG(a_dim, s_dim, train=train)
+    for i in range(max_episodes):  # 一共运行 maxepisode 次
+        time.sleep(1)
         try:
             client = carla.Client(args.host, args.port)  # host address and port
             world = client.load_world('Town01')  # load world of "Town01"
             client.set_timeout(4.0)  # 超时时间
-
             display = pygame.display.set_mode(
                 (args.width, args.height),
                 pygame.HWSURFACE | pygame.DOUBLEBUF)
-
             hud = HUD(args.width, args.height)
-            # World ():Class that contains the current loaded map. In this class, we can costomize
-            # the actor, weather and so on.
-            # the input of this class is world of "Town01", hud, and the actor(vehicle defined in main args.)
-            world = World(client.get_world(), hud, args.filter)  # client.get_world: return "Town01"
+            world = World(client.get_world(), hud, args.filter)
             controller = RLControl(world)
-
             clock = pygame.time.Clock()
-
-            while True:
+            s = world.get_state()
+            ep_reward = 0
+            while True:  # 每次的内部循环
                 # as soon as the server is ready continue!
                 world.world.wait_for_tick(10.0)
-                world.tick(clock)  # Synchronizes with the simulator and returns the id of the newly started frame (only has effect on synchronous mode).
-                world.render(display)  # 渲染
+                world.tick(clock)
+                if render:  world.render(display)  # 渲染
                 pygame.display.flip()
 
-                control, state, r, done = controller.step(world, action=[0, 0.5, 0])
-                print(state)
-                control.manual_gear_shift = False
+                t1 = time.time()
+                a = ddpg.choose_action(s)
+                a = np.clip(np.random.normal(a, var), -1, 1)  # Add exploration noise
+                # add randomness to action selection for exploration
+                control, s_, r, done = controller.step(world, action=a)
+                ddpg.store_transition(s, a, r / 10, s_)
+                if ddpg.pointer > memory_capcity:
+                    var *= .99995  # decay the action randomness
+                    ddpg.learn()
+                s = s_
+                ep_reward += r
                 world.player1.apply_control(control)
-                if control.collisionFlag is not None:
-                    # print("newly start")
+                if control.collisionFlag:
+                    print("collision!")
+                    print(
+                        'Episode:',
+                        i,
+                        ' Reward: %i' %
+                        int(ep_reward),
+                        'Explore: %.2f' %
+                        var,
+                    )
                     break
-                elif world.player1.get_location().x <95:
+                if world.player1.get_location().x < 95:
                     print("sucess!")
+                    print(
+                        'Episode:',
+                        i,
+                        ' Reward: %i' %
+                        int(ep_reward),
+                        'Explore: %.2f' %
+                        var,
+                    )
                     break
-                    # world.destroy_sensors()
-                    # world.destroy()
-                    # break
 
         finally:
             if world is not None:
                 world.destroy()
+    ddpg.save_net()
+    print('Running time: ', time.time() - t1)
     pygame.quit()
 
 
@@ -766,20 +902,30 @@ def game_loop(args):
 # -- main() --------------------------------------------------------------
 # ==============================================================================
 def distance(x, y):
-     return np.sqrt(np.square(x[0]-y[0]) + np.square(x[1]-y[1]) + np.square(x[2]-y[2]))
+    return np.sqrt(
+        np.square(
+            x[0] -
+            y[0]) +
+        np.square(
+            x[1] -
+            y[1]) +
+        np.square(
+            x[2] -
+            y[2]))
 
 
 def reward_function(state1, state2, dest, collision_flag):
-    k1,k2 = 1, 1
-    r1 = k1 * np.exp(-distance(state1, dest) + 50)
+    k1, k2 = 0.1, 0.1
+    r1 = - k1 * distance(state1, dest)
     r2 = k2 * distance(state1, state2)
     if collision_flag:
-        r3 = -200 #
+        r3 = -50
     else:
         r3 = 0
     # r4 = # time
-    r = r1+r2+r3
+    r = r1 + r2 + r3
     return r
+
 
 def main():
     argparser = argparse.ArgumentParser(
@@ -803,7 +949,7 @@ def main():
     argparser.add_argument(
         '--res',
         metavar='WIDTHxHEIGHT',
-        default='1280x720',
+        default='500x500',
         help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--filter',

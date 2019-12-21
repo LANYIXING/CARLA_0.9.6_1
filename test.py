@@ -2,6 +2,7 @@
 
 import threading
 from time import sleep
+import numpy as np
 from DDPG import DDPG
 
 
@@ -37,4 +38,6 @@ def main():
 
 if __name__ == '__main__':
     # main()
-    DDPG = DDPG(a_dim=3, s_dim=12)
+    # DDPG = DDPG(a_dim=3, s_dim=12)
+    a = np.array([1,2,3])
+    print(a[2])
