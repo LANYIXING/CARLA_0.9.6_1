@@ -75,6 +75,7 @@ class DDPG(object):
         self.saver = tf.train.Saver()
         if train is False:
             self.restore_net()
+        self.restore_net()
         if tensorboard_graph:
             if os.path.exists(LOG_DIR):
                 shutil.rmtree(LOG_DIR)
@@ -192,6 +193,7 @@ class DDPG(object):
 
     def restore_net(self):
         self.saver.restore(self.sess, 'DDPG' + "/save_net.ckpt")
+        print('model has restored')
 
 
 # TRAIN OR TEST

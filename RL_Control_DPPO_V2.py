@@ -825,9 +825,7 @@ class CameraManager(object):
 # ==============================================================================
 
 def game_loop(args):
-    pygame.init()  # intial pygame
-    pygame.font.init()  # initialize the font module
-    # DDPG_PARAMETERS
+    # DPPO_PARAMETERS
     train = True
     s_dim = 12
     a_dim = 3
@@ -835,9 +833,11 @@ def game_loop(args):
     memory_capcity = 10000  # memory size
     max_episodes = 200000
     GLOBAL_RUNNING_R = []
-    # render = True  # display
-    render = False  # display
+    render = True  # display
     ddpg = DDPG.DDPG(a_dim, s_dim, train=train)
+    pygame.init()  # intial pygame
+    pygame.font.init()  # initialize the font module
+
     for i in range(max_episodes):  # 一共运行 maxepisode 次
 
         if i % 30 == 1:
@@ -924,7 +924,7 @@ def reward_function(state1, state2, dest, collision_flag):
     if distance(state1, dest) < 10:
         r1 = 300
     else:
-        r1 = -1
+        r1 = -10
     if collision_flag:
         r2 = -300
     else:
