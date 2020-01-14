@@ -1,7 +1,5 @@
 """
  DDPG for Carla 0.9.6
- ./CarlaUE4.sh /Game/Maps/Town01 -carla-server -benchmark -fps=15 -windowed -ResX=300 -ResY=300
-
 """
 
 from __future__ import print_function
@@ -24,7 +22,6 @@ import shutil
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import DDPG
-import plot_record
 
 try:
     import pygame
@@ -57,6 +54,7 @@ try:
     from pygame.locals import K_w
     from pygame.locals import K_MINUS
     from pygame.locals import K_EQUALS
+    import plot_record
 except ImportError:
     raise RuntimeError(
         'cannot import pygame, make sure pygame package is installed')
@@ -145,7 +143,6 @@ class World(object):
 
     def restart(self):
         # Keep same camera config if the camera manager exists.
-        time.sleep(1)
         cam_index = self.camera_manager.index if self.camera_manager is not None else 0
         cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
         # Get a random blueprint.
@@ -175,59 +172,67 @@ class World(object):
         # Spawn the player.
 
         #     ******************* change positions ****************************
-        while self.player1 is None:
+        # while self.player1 is None:
             # spawn_points = self.map.get_spawn_points()
             # print("length of sapwn_point is %d" % len(spawn_points) + ",just
             # choose one")  # 257 just choose one
-            x_rand = random.randint(18000, 23000)
-            x_rand_v2 = random.randint(x_rand + 1000, 25000)
-            x_rand = x_rand / 100.0
-            x_rand_v2 = x_rand_v2 / 100.0
-            y_rand = random.randint(12855, 13455)
-            y_rand = y_rand / 100.0
-            x_speed_randon_v2 = random.randint(100, 3000)
-            if x_speed_randon_v2 - 1000 > 0:
-                x_speed_player = x_speed_randon_v2 - 100
+        x_rand = random.randint(18000, 23000)
+        x_rand_v2 = random.randint(x_rand + 1000, 25000)
+        x_rand = x_rand / 100.0
+        x_rand_v2 = x_rand_v2 / 100.0
+        y_rand = random.randint(12855, 13455)
+        y_rand = y_rand / 100.0
+        x_speed_randon_v2 = random.randint(100, 3000)
+        if x_speed_randon_v2 - 1000 > 0:
+            x_speed_player = x_speed_randon_v2 - 100
 
-            else:
-                x_speed_player = 0
-            x_speed_player = x_speed_player / 100
+        else:
+            x_speed_player = 0
+        x_speed_player = x_speed_player / 100
 
-            x_speed_randon_v2 = x_speed_randon_v2 / 100
-            spawn_point1 = Transform(
-                Location(
-                    x=x_rand, y=y_rand, z=1.320625), Rotation(
-                    pitch=0.000000, yaw=179.999756, roll=0.000000))
-            # ********************************* end ***************************
+        x_speed_randon_v2 = x_speed_randon_v2 / 100
+        spawn_point1 = Transform(
+            Location(
+                x=x_rand, y=y_rand, z=1.320625), Rotation(
+                pitch=0.000000, yaw=179.999756, roll=0.000000))
+        # ********************************* end ***************************
+        if self.player1 is None:
+            print("player1")
             self.player1 = self.world.try_spawn_actor(blueprint, spawn_point1)
-            spawn_point2 = Transform(
-                Location(
-                    x=x_rand_v2, y=y_rand, z=1.320625), Rotation(
-                    pitch=0.000000, yaw=179.999756, roll=0.000000))
-            if self.vehicle2 is None:
-                # print("*****************")
-                self.vehicle2 = self.world.try_spawn_actor(
-                    blueprint2, spawn_point2)
-                self.vehicle2.set_velocity(
-                    carla.Vector3D(
-                        x=-x_speed_randon_v2,
-                        y=0.00000,
-                        z=0.000000))
-                self.player1.set_velocity(
-                    carla.Vector3D(
-                        x=-x_speed_player,
-                        y=0.00000,
-                        z=0.00000))
+            # print("player",self.player1)
+        # if self.player1 is not None:
+        spawn_point2 = Transform(
+            Location(
+                x=x_rand_v2, y=y_rand, z=1.320625), Rotation(
+                pitch=0.000000, yaw=179.999756, roll=0.000000))
+        if self.vehicle2 is None:
+            print("vehicle2")
+            self.vehicle2 = self.world.try_spawn_actor(
+                blueprint2, spawn_point2)
 
-        # Set up the sensors.
-        self.collision_sensor = CollisionSensor(self.player1, self.hud)
-        self.lane_invasion_sensor = LaneInvasionSensor(self.player1, self.hud)
-        self.gnss_sensor = GnssSensor(self.player1)
-        self.camera_manager = CameraManager(self.player1, self.hud)
-        self.camera_manager.transform_index = cam_pos_index
-        self.camera_manager.set_sensor(cam_index, notify=False)
-        actor_type = get_actor_display_name(self.player1)
-        self.hud.notification(actor_type)
+            # print("vehicle2",self.vehicle2)
+        if self.vehicle2 is not None:
+            self.vehicle2.set_velocity(
+                carla.Vector3D(
+                    x=-x_speed_randon_v2,
+                    y=0.00000,
+                    z=0.000000))
+        if self.player1 is not None:
+            self.player1.set_velocity(
+                carla.Vector3D(
+                    x=-x_speed_player,
+                    y=0.00000,
+                    z=0.00000))
+        if self.player1 is not None and self.vehicle2 is not None:
+            # Set up the sensors.
+            self.collision_sensor = CollisionSensor(self.player1, self.hud)
+            self.lane_invasion_sensor = LaneInvasionSensor(self.player1, self.hud)
+            self.gnss_sensor = GnssSensor(self.player1)
+            self.camera_manager = CameraManager(self.player1, self.hud)
+            self.camera_manager.transform_index = cam_pos_index
+            self.camera_manager.set_sensor(cam_index, notify=False)
+            actor_type = get_actor_display_name(self.player1)
+            self.hud.notification(actor_type)
 
     def next_weather(self, reverse=False):
         self._weather_index += 0 if reverse else 0
@@ -246,9 +251,12 @@ class World(object):
         self.hud.render(display)
 
     def destroy_sensors(self):
-        self.camera_manager.sensor.destroy()
-        self.camera_manager.sensor = None
-        self.camera_manager.index = None
+        if self.camera_manager.sensor is not None:
+            self.camera_manager.sensor.destroy()
+        if self.camera_manager.sensor is not None:
+            self.camera_manager.sensor = None
+        if self.camera_manager.index is not None:
+            self.camera_manager.index = None
 
     def destroy(self):
         actors = [
@@ -276,7 +284,16 @@ class World(object):
                       self.vehicle2.get_velocity().y,
                       self.vehicle2.get_velocity().z,
                       ])
-        return s
+        player1 = np.array([self.player1.get_location().x,
+                      self.player1.get_location().y,
+                      self.player1.get_location().z,
+                      ])
+        player2 = np.array([self.vehicle2.get_location().x,
+                      self.vehicle2.get_location().y,
+                      self.vehicle2.get_location().z,
+                            ])
+        dist = distance(player2, player1)
+        return s, dist
 
 
 # ==============================================================================
@@ -301,9 +318,9 @@ class RLControl(object):
         col_fram = world.hud.frame
         # print(col_fram)
 
-        if col_hist.get(col_fram) is not None:
-            print("new_collision_value and newly start:")
-            print(col_hist.get(col_fram))
+        # if col_hist.get(col_fram) is not None:
+            # print("new_collision_value and newly start:")
+            # print(col_hist.get(col_fram))
 
         control = carla.VehicleControl()
         action = action.tolist()
@@ -314,8 +331,8 @@ class RLControl(object):
         control.hand_brake = False
         control.manual_gear_shift = False
         control.collisionFlag = col_hist.get(col_fram)
-        # if control.collisionFlag:
-        #     print('collisionFlag')
+        if control.collisionFlag:
+            print('collisionFlag')
         return control, control.collisionFlag
 
     def step(self, world, action):
@@ -347,6 +364,7 @@ class RLControl(object):
              self.vehicle2_location,
              self.vehicle2_velocity),
             axis=0)
+        dist = distance(self.vehicle1_location, self.vehicle2_location)
         dest = np.array([90, 133, 80])
         r = reward_function(
             self.vehicle1_location,
@@ -355,10 +373,10 @@ class RLControl(object):
             collision_flag)
         done = False
         if collision_flag:
-            done = 'collision'
+            done = True
         if distance(self.vehicle1_location, dest) < 5:
-            done = 'success'
-        return control, state, r, done
+            done = True
+        return control, state, r, done, dist
 
 
 # ==============================================================================
@@ -833,82 +851,100 @@ def game_loop(args):
     a_dim = 3
     var = 1  # control exploration
     memory_capcity = 10000  # memory size
-    max_episodes = 200000
+    max_episodes = 5000
+    render = True  # display
+    # render = False  # display
     GLOBAL_RUNNING_R = []
-    # render = True  # display
-    render = False  # display
     ddpg = DDPG.DDPG(a_dim, s_dim, train=train)
     for i in range(max_episodes):  # 一共运行 maxepisode 次
-
+        client = carla.Client('127.0.0.1', 2000)  # host address and port
+        world = client.load_world('Town01')  # load world of "Town01"
+        client.set_timeout(4.0)  # 超时时间
+        display = pygame.display.set_mode(
+            (args.width, args.height),
+            pygame.HWSURFACE | pygame.DOUBLEBUF)
+        hud = HUD(args.width, args.height)
         if i % 30 == 1:
             ddpg.save_net()
             plot_record.plt_reward(
                 GLOBAL_RUNNING_R=GLOBAL_RUNNING_R,
                 title='carla')
-        try:
-            client = carla.Client(args.host, args.port)  # host address and port
-            time.sleep(3)
-            world = client.load_world('Town01')  # load world of "Town01"
-            client.set_timeout(4.0)  # 超时时间
-            display = pygame.display.set_mode(
-                (args.width, args.height),
-                pygame.HWSURFACE | pygame.DOUBLEBUF)
-            hud = HUD(args.width, args.height)
-            world = World(client.get_world(), hud, args.filter)
-            controller = RLControl(world)
-            clock = pygame.time.Clock()
-            s = world.get_state()
-            ep_reward = 0
-            while True:  # 每次的内部循环
-                # as soon as the server is ready continue!
-                world.world.wait_for_tick(10.0)
-                world.tick(clock)
-                if render:  world.render(display)  # 渲染
-                pygame.display.flip()
+        world = World(client.get_world(), hud, 'vehicle.bmw.grandtourer')
+        if world.player1 is None:
+            print("enter this continue player1 >>>>>>>>>>>>>>>>>>>>>>")
+            continue
+        if world.vehicle2 is None:
+            print("enter this continue vehicle2 >>>>>>>>>>>>>>>>>>>>>>")
+            if world.player1 is not None:
+                world.player1.destroy()
+            continue
+        controller = RLControl(world)
+        clock = pygame.time.Clock()
+        s, dist = world.get_state()
+        flag = False
+        ep_reward = 0
+        print("veh start")
+        while True:  # 每次的内部循环
+            # as soon as the server is ready continue!
+            world.world.wait_for_tick(10.0)
+            world.tick(clock)
+            if render:
+                world.render(display)  # 渲染
+            pygame.display.flip()
+            t1 = time.time()
+            print(dist)
+            if dist < 15:
+                flag = True
+            if flag is not True:
+                a = np.array([0, 0.5, 0])
+                control, s_, r, done, dist = controller.step(world, action=a)
+            else:
+                a = ddpg.choose_action(s)
+                a = np.clip(np.random.normal(a, var), -1, 1)  # Add exploration noise
+                # add randomness to action selection for exploration
+                control, s_, r, done, dist = controller.step(world, action=a)
+                ddpg.store_transition(s, a, r / 10, s_)
+                if ddpg.memory_counter > memory_capcity:
+                    var *= .999999  # decay the action randomness
+                    ddpg.learn()
+                ep_reward += r
+            s = s_
+            world.player1.apply_control(control)
+            # print(7)
+            if control.collisionFlag:
+                # print("collision!")
+                GLOBAL_RUNNING_R.append(ep_reward)
+                print(i)
 
-                t1 = time.time()
-                if distance(s, world.vehicle2.get_location()) > 5:
-                    a = [0, 0.5]
-                    control, s_, r, done = controller.step(world, action=a)
-                else:
-                    a = ddpg.choose_action(s)
-                    a = np.clip(np.random.normal(a, var), -1, 1)  # Add exploration noise
-                    # add randomness to action selection for exploration
-                    control, s_, r, done = controller.step(world, action=a)
-                    ddpg.store_transition(s, a, r / 10, s_)
-                    if ddpg.pointer > memory_capcity:
-                        var *= .99995  # decay the action randomness
-                        ddpg.learn()
-                    ep_reward += r
-                s = s_
-                world.player1.apply_control(control)
-                if done:
-                    if done == 'collision':
-                        print("collision!")
-                    else:
-                        print('success')
-                    print(
-                        'Episode:',
-                        i,
-                        ' Reward: %i' %
-                        int(ep_reward),
-                        'Explore: %.2f' %
-                        var,
-                    )
-                    GLOBAL_RUNNING_R.append(ep_reward)
-                    break
+                break
+            if world.player1.get_location().x < 95:
 
-        finally:
-            if world is not None:
-                world.destroy()
+                # print("sucess!")
+                print(i)
+                GLOBAL_RUNNING_R.append(ep_reward)
+
+                print(
+                    'Episode:',
+                    i,
+                    ' Reward: %i' %
+                    int(ep_reward),
+                    'Explore: %.2f' %
+                    var,
+                )
+
+                break
+                # if world.player1.get_velocity() == 0:
+                #     break
+        if world is not None:
+            world.destroy()
     ddpg.save_net()
-
     print('Running time: ', time.time() - t1)
     pygame.quit()
 
 
 # ==============================================================================
 # -- main() --------------------------------------------------------------
+# ==============================================================================
 # ==============================================================================
 def distance(x, y):
     return np.sqrt(
@@ -925,16 +961,12 @@ def distance(x, y):
 
 def reward_function(state1, state2, dest, collision_flag):
 
-    if distance(state1, dest) < 10:
-        r1 = 300
-    else:
-        r1 = -1
     if collision_flag:
-        r2 = -300
+        r3 = -100
     else:
-        r2 = 0
+        r3 = 1
     # r4 = # time
-    r = r1 + r2
+    r = r3
     return r
 
 
@@ -987,4 +1019,5 @@ def main():
 
 
 if __name__ == '__main__':
+    #  ./CarlaUE4.sh /Game/Maps/Town01 -carla-server -benchmark -fps=15 -windowed -ResX=300 -ResY=300
     main()

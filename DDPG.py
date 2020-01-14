@@ -7,6 +7,7 @@ import numpy as np
 import time
 import os
 import shutil
+import prioritied_sampling as p
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 
@@ -18,26 +19,42 @@ LR_C = 0.002  # learning rate for critic net
 GAMMA = 0.9  # reward discount
 TAU = 0.01  # soft replacement
 MEMORY_CAPACITY = 10000  # memory size
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 RENDER = False  # display
 
 
 #  RL Method
 
 class DDPG(object):
-    def __init__(self, a_dim, s_dim, train=True, tensorboard_graph=True):
+    def __init__(self, a_dim, s_dim, train=True,
+                 tensorboard_graph=True,
+                 memory_size=10000,
+                 batch_size=32,
+                 prioritized=True,
+                 ):
         tf.reset_default_graph()
         self.memory = np.zeros(
             (MEMORY_CAPACITY,
              s_dim * 2 + a_dim + 1),
             dtype=np.float32)  # initialize memory buffer
-        self.pointer = 0  # interaction times
         self.sess = tf.Session()
         self.a_dim, self.s_dim = a_dim, s_dim
         self.S = tf.placeholder(tf.float32, [None, s_dim], 's')
         self.S_ = tf.placeholder(tf.float32, [None, s_dim], 's_')
         self.R = tf.placeholder(tf.float32, [None, 1], 'r')
         self.a = self._build_a(self.S)
+        self.prioritized = prioritized
+        self.batch_size = batch_size
+        self.memory_size = memory_size
+        self.memory_counter = 0
+
+        # --- prioritized  ddpg
+        if self.prioritized:
+            self.memory = p.Memory(capacity=memory_size)
+        # need checking
+        else:
+            self.memory = np.zeros((self.memory_size, s_dim*2+2))
+
         # evaluate Q(s,a)
         q = self._build_c(self.S, self.a, )
         # get valuable
@@ -66,10 +83,10 @@ class DDPG(object):
         # minimize td_error to train c_net
         with tf.control_dependencies(target_update):
             q_target = self.R + GAMMA * q_
-            td_error = tf.losses.mean_squared_error(
+            self.td_error = tf.losses.mean_squared_error(
                 labels=q_target, predictions=q)
             self.ctrain = tf.train.AdamOptimizer(
-                LR_C).minimize(td_error, var_list=c_params)
+                LR_C).minimize(self.td_error, var_list=c_params)
 
         self.sess.run(tf.global_variables_initializer())
         self.saver = tf.train.Saver()
@@ -86,24 +103,43 @@ class DDPG(object):
         return a
 
     def learn(self):
-        indices = np.random.choice(MEMORY_CAPACITY, size=BATCH_SIZE)
-        bt = self.memory[indices, :]
-        bs = bt[:, :self.s_dim]
-        ba = bt[:, self.s_dim: self.s_dim + self.a_dim]
-        br = bt[:, -self.s_dim - 1: -self.s_dim]
-        bs_ = bt[:, -self.s_dim:]
+        if self.prioritized:
+            tree_idx, batch_memory, ISWeights = self.memory.sample(self.batch_size)
+        else:
+            sample_index = np.random.choice(self.memory_size, size=self.batch_size)
+            batch_memory = self.memory[sample_index, :]
+
+        bs = batch_memory[:, :self.s_dim]
+        ba = batch_memory[:, self.s_dim: self.s_dim + self.a_dim]
+        br = batch_memory[:, -self.s_dim - 1: -self.s_dim]
+        bs_ = batch_memory[:, -self.s_dim:]
 
         self.sess.run(self.atrain, {self.S: bs})
         self.sess.run(
             self.ctrain, {
                 self.S: bs, self.a: ba, self.R: br, self.S_: bs_})
+        if self.prioritized:
+            abs_errors = self.sess.run(
+            self.td_error, {
+                self.S: bs, self.a: ba, self.R: br, self.S_: bs_})
+            self.memory.batch_update(tree_idx, abs_errors)     # update priority
+
+
+
+
 
     def store_transition(self, s, a, r, s_):
-        transition = np.hstack((s, a, [r], s_))
-        # replace the old memory with new memory
-        index = self.pointer % MEMORY_CAPACITY
-        self.memory[index, :] = transition
-        self.pointer += 1
+        if self.prioritized:    # prioritized replay
+            transition = np.hstack((s, a, r, s_))
+            self.memory.store(transition)
+            self.memory_counter += 1
+
+        else:       # random replay
+            transition = np.hstack((s, a, r, s_))
+            # replace the old memory with new memory
+            index = self.memory_counter % MEMORY_CAPACITY
+            self.memory[index, :] = transition
+            self.memory_counter += 1
 
     def _build_a(self, s, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
@@ -198,78 +234,78 @@ class DDPG(object):
 
 # TRAIN OR TEST
 
-def main(train=True):
-    s_dim = 12
-    a_dim = 3
-
-    if train:
-        ddpg = DDPG(a_dim, s_dim, train=train)
-        s = np.ones(12)  # s = world.reset()
-        var = 3  # control exploration
-        t1 = time.time()
-        for i in range(MAX_EPISODES):
-
-            ep_reward = 0
-            while True:
-                # Add exploration noise
-                a = ddpg.choose_action(s)
-                # add randomness to action selection for exploration
-                # s_, r, done = world.step(a)
-
-                ddpg.store_transition(s, a, r / 10, s_)
-
-                if ddpg.pointer > MEMORY_CAPACITY:
-                    var *= .9995  # decay the action randomness
-                    ddpg.learn()
-
-                s = s_
-                ep_reward += r
-                if done:
-                    print(
-                        'Episode:',
-                        i,
-                        ' Reward: %i' %
-                        int(ep_reward),
-                        'Explore: %.2f' %
-                        var,
-                    )
-                    # if ep_reward > -300:RENDER = True
-                    break
-        ddpg.save_net()
-        print('Running time: ', time.time() - t1)
-
-    else:
-
-        s = np.ones(12)  # s = world.reset()
-        ddpg = DDPG(a_dim, s_dim, train=train)
-        saver = tf.train.Saver()
-        var = 3  # control exploration
-        t1 = time.time()
-        for i in range(MAX_EPISODES):
-
-            ep_reward = 0
-            while True:
-                # Add exploration noise
-                steer, throttle, brake, a = ddpg.choose_action(s)
-                # add randomness to action selection for exploration
-                # s_, r, done, info = world.step(a)
-
-                s = s_
-                ep_reward += r
-                if done:
-                    print(
-                        'Episode:',
-                        i,
-                        ' Reward: %i' %
-                        int(ep_reward),
-                        'Explore: %.2f' %
-                        var,
-                    )
-                    # if ep_reward > -300:RENDER = True
-                    break
-
-        print('Running time: ', time.time() - t1)
-
-
-if __name__ == '__main__':
-    main(train=True)
+# def main(train=True):
+#     s_dim = 12
+#     a_dim = 3
+#
+#     if train:
+#         ddpg = DDPG(a_dim, s_dim, train=train)
+#         s = np.ones(12)  # s = world.reset()
+#         var = 3  # control exploration
+#         t1 = time.time()
+#         for i in range(MAX_EPISODES):
+#
+#             ep_reward = 0
+#             while True:
+#                 # Add exploration noise
+#                 a = ddpg.choose_action(s)
+#                 # add randomness to action selection for exploration
+#                 # s_, r, done = world.step(a)
+#
+#                 ddpg.store_transition(s, a, r / 10, s_)
+#
+#                 if ddpg.memory_counter > MEMORY_CAPACITY:
+#                     var *= .9995  # decay the action randomness
+#                     ddpg.learn()
+#
+#                 s = s_
+#                 ep_reward += r
+#                 if done:
+#                     print(
+#                         'Episode:',
+#                         i,
+#                         ' Reward: %i' %
+#                         int(ep_reward),
+#                         'Explore: %.2f' %
+#                         var,
+#                     )
+#                     # if ep_reward > -300:RENDER = True
+#                     break
+#         ddpg.save_net()
+#         print('Running time: ', time.time() - t1)
+#
+#     else:
+#
+#         s = np.ones(12)  # s = world.reset()
+#         ddpg = DDPG(a_dim, s_dim, train=train)
+#         saver = tf.train.Saver()
+#         var = 3  # control exploration
+#         t1 = time.time()
+#         for i in range(MAX_EPISODES):
+#
+#             ep_reward = 0
+#             while True:
+#                 # Add exploration noise
+#                 steer, throttle, brake, a = ddpg.choose_action(s)
+#                 # add randomness to action selection for exploration
+#                 # s_, r, done, info = world.step(a)
+#
+#                 s = s_
+#                 ep_reward += r
+#                 if done:
+#                     print(
+#                         'Episode:',
+#                         i,
+#                         ' Reward: %i' %
+#                         int(ep_reward),
+#                         'Explore: %.2f' %
+#                         var,
+#                     )
+#                     # if ep_reward > -300:RENDER = True
+#                     break
+#
+#         print('Running time: ', time.time() - t1)
+#
+#
+# if __name__ == '__main__':
+#     main(train=True)
