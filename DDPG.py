@@ -8,8 +8,8 @@ import time
 import os
 import shutil
 import prioritied_sampling as p
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 #  hyper parameters
 LOG_DIR = './logs'  # tensorboard
@@ -27,8 +27,10 @@ RENDER = False  # display
 
 class DDPG(object):
     def __init__(self, a_dim, s_dim, train=True,
+                 restore=False,
                  tensorboard_graph=True,
                  memory_size=10000,
+                 # memory_size=100,
                  batch_size=32,
                  prioritized=True,
                  ):
@@ -53,7 +55,7 @@ class DDPG(object):
             self.memory = p.Memory(capacity=memory_size)
         # need checking
         else:
-            self.memory = np.zeros((self.memory_size, s_dim*2+2))
+            self.memory = np.zeros((self.memory_size, s_dim * 2 + a_dim + 1))
 
         # evaluate Q(s,a)
         q = self._build_c(self.S, self.a, )
@@ -85,6 +87,7 @@ class DDPG(object):
             q_target = self.R + GAMMA * q_
             self.td_error = tf.losses.mean_squared_error(
                 labels=q_target, predictions=q)
+            self.abs_errors = tf.reduce_sum(tf.abs(q_target - q), axis=1)
             self.ctrain = tf.train.AdamOptimizer(
                 LR_C).minimize(self.td_error, var_list=c_params)
 
@@ -92,7 +95,8 @@ class DDPG(object):
         self.saver = tf.train.Saver()
         if train is False:
             self.restore_net()
-        self.restore_net()
+        if restore is True:
+            self.restore_net()
         if tensorboard_graph:
             if os.path.exists(LOG_DIR):
                 shutil.rmtree(LOG_DIR)
@@ -120,21 +124,17 @@ class DDPG(object):
                 self.S: bs, self.a: ba, self.R: br, self.S_: bs_})
         if self.prioritized:
             abs_errors = self.sess.run(
-            self.td_error, {
-                self.S: bs, self.a: ba, self.R: br, self.S_: bs_})
-            self.memory.batch_update(tree_idx, abs_errors)     # update priority
-
-
-
-
+                self.abs_errors, {
+                    self.S: bs, self.a: ba, self.R: br, self.S_: bs_})
+            self.memory.batch_update(tree_idx, abs_errors)  # update priority
 
     def store_transition(self, s, a, r, s_):
-        if self.prioritized:    # prioritized replay
+        if self.prioritized:  # prioritized replay
             transition = np.hstack((s, a, r, s_))
             self.memory.store(transition)
             self.memory_counter += 1
 
-        else:       # random replay
+        else:  # random replay
             transition = np.hstack((s, a, r, s_))
             # replace the old memory with new memory
             index = self.memory_counter % MEMORY_CAPACITY
@@ -143,27 +143,42 @@ class DDPG(object):
 
     def _build_a(self, s, reuse=None, custom_getter=None):
         trainable = True if reuse is None else False
-        w_init = tf.random_normal_initializer(0., .1)
+        w_init = tf.random_normal_initializer(0., .01)
+        l2_regularizer = tf.contrib.layers.l2_regularizer(0.1)
+        # n_a = 200
         with tf.variable_scope('Actor', reuse=reuse, custom_getter=custom_getter):
+            #     w1_a = tf.get_variable(
+            #         'w1_a', [self.s_dim, n_a], trainable=trainable,
+            #         initializer=w_init,
+            #         regularizer=l2_regularizer)
+            #     w2_a = tf.get_variable(
+            #         'w2_a', [n_a, n_a], trainable=trainable,
+            #         initializer=w_init,
+            #         regularizer=l2_regularizer)
+            #     b1 = tf.get_variable('b1', [1, n_a], trainable=trainable, regularizer=l2_regularizer)
+            #     b2 = tf.get_variable('b2', [1, n_a], trainable=trainable, regularizer=l2_regularizer)
+            #     layer1 = tf.nn.relu(tf.matmul(s, w1_a)+b1, name='a_l1')
+            #     layer2 = tf.nn.relu(tf.matmul(layer1, w2_a)+b2, name='a_l2')
             layer1 = tf.layers.dense(
                 s,
-                100,
+                200,
                 activation=tf.nn.relu,
                 name='l1',
                 trainable=trainable,
-                kernel_initializer=w_init
+                # kernel_initializer=w_init,
             )
             layer2 = tf.layers.dense(
                 layer1,
-                100,
+                200,
                 activation=tf.nn.relu,
                 name='l2',
                 trainable=trainable,
-                kernel_initializer=w_init
+                # kernel_initializer=w_init,
             )
             steer = tf.layers.dense(
                 layer2,
                 1,
+                # activation=tf.nn.sigmoid,
                 activation=tf.nn.tanh,
                 name='a_s',
                 trainable=trainable,
@@ -185,22 +200,25 @@ class DDPG(object):
                 trainable=trainable,
                 kernel_initializer=w_init
             )
-            steer = tf.clip_by_value(steer, -1, 1)
+            steer = tf.clip_by_value(steer, -0.5, 0.5)
             throttle = tf.clip_by_value(throttle, 0, 1)
             brake = tf.clip_by_value(brake, 0, 1)
             a = tf.concat([steer, throttle, brake], axis=1)
             return a
 
     def _build_c(self, s, a, reuse=None, custom_getter=None):
+        l2_regularizer = tf.contrib.layers.l2_regularizer(0.1)
         trainable = True if reuse is None else False
-        w_init = tf.random_normal_initializer(0., .1)
+        w_init = tf.random_normal_initializer(0., .01)
         with tf.variable_scope('Critic', reuse=reuse, custom_getter=custom_getter):
-            n_l1 = 100
+            n_l1 = 200
             w1_s = tf.get_variable(
-                'w1_s', [self.s_dim, n_l1], trainable=trainable)
+                'w1_s', [self.s_dim, n_l1], trainable=trainable,
+                regularizer=l2_regularizer)
             w1_a = tf.get_variable(
-                'w1_a', [self.a_dim, n_l1], trainable=trainable)
-            b1 = tf.get_variable('b1', [1, n_l1], trainable=trainable)
+                'w1_a', [self.a_dim, n_l1], trainable=trainable,
+                regularizer=l2_regularizer)
+            b1 = tf.get_variable('b1', [1, n_l1], trainable=trainable, regularizer=l2_regularizer)
             layer1 = tf.nn.relu(
                 tf.matmul(
                     s,
@@ -209,19 +227,20 @@ class DDPG(object):
                     a,
                     w1_a) +
                 b1,
-                name='c_l1')
+                name='c_l1'
+            )
             layer2 = tf.layers.dense(
                 layer1,
                 n_l1,
                 activation=tf.nn.relu,
                 name='c_l2',
                 trainable=trainable,
-                kernel_initializer=w_init
+                kernel_initializer=w_init,
             )
 
             return tf.layers.dense(layer2, 1, trainable=trainable,
-                kernel_initializer=w_init
-            )  # Q(s,a)
+                                   kernel_initializer=w_init
+                                   )  # Q(s,a)
 
     def save_net(self):
         save_path = self.saver.save(self.sess, 'DDPG' + "/save_net.ckpt")
@@ -230,7 +249,6 @@ class DDPG(object):
     def restore_net(self):
         self.saver.restore(self.sess, 'DDPG' + "/save_net.ckpt")
         print('model has restored')
-
 
 # TRAIN OR TEST
 

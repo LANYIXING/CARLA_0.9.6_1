@@ -851,6 +851,7 @@ def game_loop(args):
     a_dim = 3
     var = 1  # control exploration
     memory_capcity = 10000  # memory size
+    # memory_capcity = 10000  # memory size
     max_episodes = 5000
     render = True  # display
     # render = False  # display
@@ -892,7 +893,7 @@ def game_loop(args):
                 world.render(display)  # 渲染
             pygame.display.flip()
             t1 = time.time()
-            print(dist)
+            # print(dist)
             if dist < 15:
                 flag = True
             if flag is not True:
@@ -900,13 +901,14 @@ def game_loop(args):
                 control, s_, r, done, dist = controller.step(world, action=a)
             else:
                 a = ddpg.choose_action(s)
+                print(a)
                 a = np.clip(np.random.normal(a, var), -1, 1)  # Add exploration noise
                 # add randomness to action selection for exploration
                 control, s_, r, done, dist = controller.step(world, action=a)
                 ddpg.store_transition(s, a, r / 10, s_)
-                if ddpg.memory_counter > memory_capcity:
-                    var *= .999999  # decay the action randomness
-                    ddpg.learn()
+                if ddpg.memory_counter > ddpg.memory_size:
+                    var *= .999995  # decay the action randomness
+                ddpg.learn()
                 ep_reward += r
             s = s_
             world.player1.apply_control(control)
